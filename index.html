@@ -311,6 +311,58 @@
         color: white;
     }
 
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        accent-color: #667eea;
+    }
+
+    .checkbox-label span {
+        user-select: none;
+    }
+
+    .bg-removed-preview {
+        display: none;
+        margin-top: 15px;
+        padding: 15px;
+        background: white;
+        border-radius: 10px;
+        border: 2px solid #667eea;
+    }
+
+    .bg-removed-preview.active {
+        display: block;
+    }
+
+    .bg-removed-preview h3 {
+        margin-bottom: 10px;
+        color: #667eea;
+        font-size: 1em;
+    }
+
+    .bg-removed-preview img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        background:
+            linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
+            linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
+            linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+        background-size: 20px 20px;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+
     .comparison {
         display: none;
         margin-top: 30px;
@@ -510,6 +562,13 @@
                 <div class="format-option" data-format="webp">WebP</div>
             </div>
         </div>
+
+        <div class="control-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="removeBackgroundToggle">
+                <span>Remove Background (Shows Preview)</span>
+            </label>
+        </div>
     </div>
 
     <div class="queue-container" id="queueContainer">
@@ -533,9 +592,11 @@
     const formatOptions = document.querySelectorAll('.format-option');
     const downloadAllBtn = document.getElementById('downloadAllBtn');
     const resetBtn = document.getElementById('resetBtn');
+    const removeBackgroundToggle = document.getElementById('removeBackgroundToggle');
 
     let defaultQuality = 80;
     let defaultFormat = 'jpeg';
+    let removeBackground = false;
     let imageQueue = [];
 
     // Select files button
@@ -608,6 +669,11 @@
         });
     });
 
+    // Background removal toggle
+    removeBackgroundToggle.addEventListener('change', (e) => {
+        removeBackground = e.target.checked;
+    });
+
     // Download all button
     downloadAllBtn.addEventListener('click', () => {
         imageQueue.forEach(item => {
@@ -642,8 +708,10 @@
                 originalSize: file.size,
                 compressedBlob: null,
                 compressedSize: 0,
+                bgRemovedBlob: null,
                 quality: defaultQuality,
-                format: defaultFormat
+                format: defaultFormat,
+                removeBackground: removeBackground
             };
 
             imageQueue.push(queueItem);
@@ -687,8 +755,15 @@
                     <img id="original-${item.id}" alt="Original">
                 </div>
             </div>
+            ${item.removeBackground ? `
+            <div class="bg-removed-preview" id="bg-preview-${item.id}">
+                <h3>🎨 Background Removed</h3>
+                <img id="bg-removed-${item.id}" alt="Background Removed">
+            </div>
+            ` : ''}
             <div class="queue-actions">
-                <button class="btn btn-download" onclick="downloadSingle('${item.id}')">Download This Image</button>
+                <button class="btn btn-download" onclick="downloadSingle('${item.id}')">Download Compressed</button>
+                ${item.removeBackground ? `<button class="btn btn-download" onclick="downloadBgRemoved('${item.id}')">Download No Background</button>` : ''}
                 <button class="btn btn-remove" onclick="removeItem('${item.id}')">Remove</button>
             </div>
         `;
@@ -733,12 +808,19 @@
                     item.compressedBlob = blob;
                     item.compressedSize = blob.size;
 
-                    updateProgress(item.id, 100);
+                    updateProgress(item.id, 90);
 
                     // Update stats
                     document.getElementById(`compressed-${item.id}`).textContent = formatFileSize(blob.size);
                     const savingsPercent = ((1 - blob.size / item.originalSize) * 100).toFixed(1);
                     document.getElementById(`savings-${item.id}`).textContent = savingsPercent + '%';
+
+                    // Process background removal if enabled
+                    if (item.removeBackground) {
+                        removeImageBackground(img, item);
+                    }
+
+                    updateProgress(item.id, 100);
 
                     // Update status
                     const statusEl = document.querySelector(`#queue-${item.id} .queue-status`);
@@ -759,6 +841,76 @@
         reader.readAsDataURL(item.file);
     }
 
+    function removeImageBackground(img, item) {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+
+        // Draw image
+        ctx.drawImage(img, 0, 0);
+
+        // Get image data
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        // Sample background color from corners
+        const sampleSize = 5;
+        const samples = [];
+
+        // Top-left corner
+        for (let y = 0; y < sampleSize; y++) {
+            for (let x = 0; x < sampleSize; x++) {
+                const idx = (y * canvas.width + x) * 4;
+                samples.push([data[idx], data[idx + 1], data[idx + 2]]);
+            }
+        }
+
+        // Calculate average background color
+        const avgR = samples.reduce((sum, s) => sum + s[0], 0) / samples.length;
+        const avgG = samples.reduce((sum, s) => sum + s[1], 0) / samples.length;
+        const avgB = samples.reduce((sum, s) => sum + s[2], 0) / samples.length;
+
+        // Remove background (make transparent if similar to background color)
+        const threshold = 40; // Adjust this for sensitivity
+
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+
+            // Calculate color difference
+            const diff = Math.sqrt(
+                Math.pow(r - avgR, 2) +
+                Math.pow(g - avgG, 2) +
+                Math.pow(b - avgB, 2)
+            );
+
+            // If similar to background, make transparent
+            if (diff < threshold) {
+                data[i + 3] = 0; // Set alpha to 0
+            }
+        }
+
+        // Put modified image data back
+        ctx.putImageData(imageData, 0, 0);
+
+        // Convert to blob (always PNG for transparency)
+        canvas.toBlob((blob) => {
+            item.bgRemovedBlob = blob;
+
+            // Display preview
+            const url = URL.createObjectURL(blob);
+            const bgPreviewImg = document.getElementById(`bg-removed-${item.id}`);
+            const bgPreviewContainer = document.getElementById(`bg-preview-${item.id}`);
+
+            if (bgPreviewImg && bgPreviewContainer) {
+                bgPreviewImg.src = url;
+                bgPreviewContainer.classList.add('active');
+            }
+        }, 'image/png');
+    }
+
     function updateProgress(itemId, percent) {
         const progressFill = document.getElementById(`progress-fill-${itemId}`);
         const progressText = document.getElementById(`progress-text-${itemId}`);
@@ -773,6 +925,15 @@
         const item = imageQueue.find(i => i.id == itemId);
         if (item && item.compressedBlob) {
             downloadImage(item.compressedBlob, item.filename, item.format);
+        }
+    }
+
+    function downloadBgRemoved(itemId) {
+        const item = imageQueue.find(i => i.id == itemId);
+        if (item && item.bgRemovedBlob) {
+            const nameWithoutExt = item.filename.replace(/\.[^/.]+$/, '');
+            const newFilename = nameWithoutExt + '_no_bg.png';
+            downloadImage(item.bgRemovedBlob, newFilename, 'png');
         }
     }
 
