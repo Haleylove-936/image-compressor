@@ -78,10 +78,47 @@
     .upload-hint {
         color: #999;
         font-size: 0.9em;
+        margin-bottom: 20px;
     }
 
     input[type="file"] {
         display: none;
+    }
+
+    .upload-buttons {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 10px;
+    }
+
+    .upload-btn {
+        padding: 12px 30px;
+        border: none;
+        border-radius: 10px;
+        font-size: 1em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: #667eea;
+        color: white;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .upload-btn:hover {
+        background: #764ba2;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    .upload-btn-folder {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .upload-btn-folder:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
     }
 
     .queue-container {
@@ -426,6 +463,14 @@
         h1 {
             font-size: 1.5em;
         }
+
+        .upload-buttons {
+            flex-direction: column;
+        }
+
+        .upload-btn {
+            width: 100%;
+        }
     }
 </style>
 
@@ -441,6 +486,11 @@
         <div class="upload-text">Click to upload or drag & drop</div>
         <div class="upload-hint">Supports JPG, PNG, WebP (Multiple files allowed)</div>
         <input type="file" id="fileInput" accept="image/*" multiple>
+        <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
+        <div class="upload-buttons">
+            <button class="upload-btn" id="selectFilesBtn">📁 Select Files</button>
+            <button class="upload-btn upload-btn-folder" id="selectFolderBtn">📂 Select Folder</button>
+        </div>
     </div>
 
     <div class="controls" id="controls">
@@ -472,6 +522,9 @@
 <script>
     const uploadArea = document.getElementById('uploadArea');
     const fileInput = document.getElementById('fileInput');
+    const folderInput = document.getElementById('folderInput');
+    const selectFilesBtn = document.getElementById('selectFilesBtn');
+    const selectFolderBtn = document.getElementById('selectFolderBtn');
     const controls = document.getElementById('controls');
     const queueContainer = document.getElementById('queueContainer');
     const queueItems = document.getElementById('queueItems');
@@ -485,8 +538,25 @@
     let defaultFormat = 'jpeg';
     let imageQueue = [];
 
-    // Upload area click
-    uploadArea.addEventListener('click', () => fileInput.click());
+    // Select files button
+    selectFilesBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInput.click();
+    });
+
+    // Select folder button
+    selectFolderBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        folderInput.click();
+    });
+
+    // Upload area click - removed to prevent conflict with buttons
+    uploadArea.addEventListener('click', (e) => {
+        // Only trigger if clicking on the upload area itself, not the buttons
+        if (e.target === uploadArea || e.target.closest('.upload-icon, .upload-text, .upload-hint')) {
+            fileInput.click();
+        }
+    });
 
     // Drag and drop
     uploadArea.addEventListener('dragover', (e) => {
@@ -510,6 +580,14 @@
     // File input change
     fileInput.addEventListener('change', (e) => {
         const files = Array.from(e.target.files);
+        if (files.length > 0) {
+            handleFiles(files);
+        }
+    });
+
+    // Folder input change
+    folderInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
         if (files.length > 0) {
             handleFiles(files);
         }
@@ -544,6 +622,7 @@
         imageQueue = [];
         queueItems.innerHTML = '';
         fileInput.value = '';
+        folderInput.value = '';
         controls.style.display = 'none';
         queueContainer.style.display = 'none';
         uploadArea.style.display = 'block';
@@ -741,13 +820,14 @@
             if (element) {
                 element.remove();
             }
-            
+
             // If no items left, reset
             if (imageQueue.length === 0) {
                 controls.style.display = 'none';
                 queueContainer.style.display = 'none';
                 uploadArea.style.display = 'block';
                 fileInput.value = '';
+                folderInput.value = '';
             }
         }
     }
