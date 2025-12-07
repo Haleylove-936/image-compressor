@@ -526,6 +526,8 @@
     }
 </style>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 </head>
 <body>
     <div class="container">
@@ -573,7 +575,7 @@
 
     <div class="queue-container" id="queueContainer">
         <div id="queueItems"></div>
-        <button class="download-all-btn" id="downloadAllBtn">Download All Compressed Images</button>
+        <button class="download-all-btn" id="downloadAllBtn">📦 Download All as ZIP</button>
         <button class="reset-btn" id="resetBtn">Clear All & Upload New Images</button>
     </div>
 </div>
@@ -675,12 +677,51 @@
     });
 
     // Download all button
-    downloadAllBtn.addEventListener('click', () => {
+    downloadAllBtn.addEventListener('click', async () => {
+        if (imageQueue.length === 0) return;
+
+        // Create a new ZIP file
+        const zip = new JSZip();
+        const folder = zip.folder('compressed_images');
+
+        // Add all compressed images to the ZIP
         imageQueue.forEach(item => {
             if (item.compressedBlob) {
-                downloadImage(item.compressedBlob, item.filename, item.format);
+                const extension = item.format === 'jpeg' ? 'jpg' : item.format;
+                const nameWithoutExt = item.filename.replace(/\.[^/.]+$/, '');
+                const filename = `${nameWithoutExt}_compressed.${extension}`;
+                folder.file(filename, item.compressedBlob);
+            }
+
+            // Add background-removed images if they exist
+            if (item.bgRemovedBlob) {
+                const nameWithoutExt = item.filename.replace(/\.[^/.]+$/, '');
+                const filename = `${nameWithoutExt}_no_bg.png`;
+                folder.file(filename, item.bgRemovedBlob);
             }
         });
+
+        // Generate the ZIP file
+        try {
+            const content = await zip.generateAsync({ type: 'blob' });
+
+            // Download the ZIP file
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `compressed_images_${Date.now()}.zip`;
+            document.body.appendChild(a);
+            a.click();
+
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+        } catch (error) {
+            console.error('Error creating ZIP file:', error);
+            alert('Failed to create ZIP file. Please try downloading images individually.');
+        }
     });
 
     // Reset button
